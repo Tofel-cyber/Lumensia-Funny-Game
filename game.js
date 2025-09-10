@@ -131,6 +131,27 @@ function createLevel(level) {
     };
 }
 
+// --- Tambahkan Suara dan Getaran ---
+const audio = {
+    collision: new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'),
+    levelUp: new Audio('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3')
+};
+audio.collision.volume = 0.5;
+audio.levelUp.volume = 0.5;
+
+function playSound(type) {
+    if (audio[type]) {
+        audio[type].currentTime = 0;
+        audio[type].play();
+    }
+}
+
+function vibratePhone(pattern) {
+    if ("vibrate" in navigator) {
+        navigator.vibrate(pattern);
+    }
+}
+
 // --- Particle System ---
 let particleSystem = null;
 function createParticles(position) {
@@ -236,6 +257,8 @@ function animate() {
             if (distance < 2) {
                 gameOver = true;
                 createParticles(ball.position);
+                playSound('collision');
+                vibratePhone(200);
                 updateUI();
                 break;
             }
@@ -244,6 +267,8 @@ function animate() {
         if (ball.position.x <= -9 || ball.position.x >= 9) {
             gameOver = true;
             createParticles(ball.position);
+            playSound('collision');
+            vibratePhone(200);
             updateUI();
         }
 
@@ -251,6 +276,8 @@ function animate() {
             level++;
             currentLevelData = createLevel(level);
             ball.position.set(0, 1, 0);
+            playSound('levelUp');
+            vibratePhone([100, 50, 100]);
         }
 
         updateUI();
@@ -295,5 +322,4 @@ function updateUI() {
     } else {
         ui.innerHTML = `Level: ${level} | Posisi Z: ${Math.floor(ball.position.z)}`;
     }
-
 }
