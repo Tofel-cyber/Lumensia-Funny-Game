@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Candy World Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #333; /* Warna teks gelap agar terbaca */
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 24px;
+            text-shadow: 1px 1px 2px #fff;
+        }
+        #restartUI {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 30px;
+            font-weight: bold;
+            text-align: center;
+            text-shadow: 1px 1px 2px #fff;
+            cursor: pointer;
+            display: none;
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.7);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui"></div>
+    <div id="restartUI"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <script>
+        // --- Setup Scene, Camera, Renderer ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xFFE0E6); // Latar belakang pink muda
+
+        const camera = new THREE.PerspectiveCamera(
+            75, window.innerWidth / window.innerHeight, 0.1, 1000
+        );
+        camera.position.set(0, 2, 7);
+        camera.lookAt(0, 1, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // --- Lights ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 1); // Pencahayaan ambient lebih kuat
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(5, 10, 5);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // --- Floor ---
+        const floorGeometry = new THREE.PlaneGeometry(20, 500);
+        const floorMaterial = new THREE.MeshStandardMaterial({
+            color: 0x90EE90, // Hijau muda cerah
+            roughness: 0.2, // Mengkilap
+            metalness: 0.1,
+        });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // --- Walls (Dinding Lorong) ---
+        const wallMaterial = new THREE.MeshStandardMaterial({
+            color: 0x87CEFA, // Biru langit
+            roughness: 0.2,
+            metalness: 0.1,
+        });
+        const wallGeometry = new THREE.BoxGeometry(1, 10, 500);
+
+        const leftWall = new THREE.Mesh(wallGeometry, wallMaterial);
+        leftWall.position.set(-10, 5, 0);
+        leftWall.castShadow = true;
+        leftWall.receiveShadow = true;
+        scene.add(leftWall);
+
+        const rightWall = new THREE.Mesh(wallGeometry, wallMaterial);
+        rightWall.position.set(10, 5, 0);
+        rightWall.castShadow = true;
+        rightWall.receiveShadow = true;
+        scene.add(rightWall);
+
+        // --- Ball ---
+        const ballGeometry = new THREE.SphereGeometry(1, 32, 32);
+        const ballMaterial = new THREE.MeshStandardMaterial({
+            color: 0xFF69B4, // Pink cerah
+            roughness: 0.1,
+            metalness: 0.1,
+        });
+        const ball = new THREE.Mesh(ballGeometry, ballMaterial);
+        ball.position.set(0, 1, 0);
+        ball.castShadow = true;
+        scene.add(ball);
+
+        // --- Rintangan Beragam ---
+        const obstacleMaterials = [
+            new THREE.MeshStandardMaterial({ color: 0xFFD700, roughness: 0.1, metalness: 0.1 }), // Emas cerah
+            new THREE.MeshStandardMaterial({ color: 0xDA70D6, roughness: 0.2, metalness: 0.1 }), // Ungu
+            new THREE.MeshStandardMaterial({ color: 0x00BFFF, roughness: 0.1, metalness: 0.1 }), // Biru terang
+        ];
+
+        function createObstacle() {
+            const shapes = [
+                new THREE.BoxGeometry(2, 2, 2),
+                new THREE.SphereGeometry(1.5, 32, 32),
+                new THREE.TorusGeometry(1.2, 0.5, 16, 50)
+            ];
+
+            const randomShape = shapes[Math.floor(Math.random() * shapes.length)];
+            const randomMaterial = obstacleMaterials[Math.floor(Math.random() * obstacleMaterials.length)];
+
+            const obstacle = new THREE.Mesh(randomShape, randomMaterial);
+            obstacle.position.y = randomShape.type === "TorusGeometry" ? 1.2 : 1;
+            obstacle.castShadow = true;
+            return obstacle;
+        }
+
+        let obstacles = [];
+        const finishLine = new THREE.Mesh(
+            new THREE.BoxGeometry(20, 0.5, 1),
+            new THREE.MeshStandardMaterial({
+                color: 0xFFC0CB, // Garis finish pink
+                roughness: 0.1,
+                metalness: 0.1,
+            })
+        );
+        finishLine.receiveShadow = true;
+        scene.add(finishLine);
+
+        function createLevel(level) {
+            obstacles.forEach(obstacle => scene.remove(obstacle));
+            obstacles = [];
+
+            const baseSpeed = 0.25;
+            const baseObstacles = 20;
+            const obstacleSpacing = 15;
+            const finishDistance = 300;
+
+            const currentSpeedZ = baseSpeed + level * 0.05;
+            const currentObstacles = baseObstacles + level * 5;
+            const currentFinishZ = finishDistance + level * 50;
+
+            for (let i = 0; i < currentObstacles; i++) {
+                let x = (Math.random() - 0.5) * 18;
+                let z = -20 - i * obstacleSpacing;
+                const newObstacle = createObstacle();
+                newObstacle.position.set(x, newObstacle.position.y, z);
+                scene.add(newObstacle);
+                obstacles.push(newObstacle);
+            }
+
+            finishLine.position.set(0, 0.25, -currentFinishZ);
+            
+            return {
+                speedZ: currentSpeedZ
+            };
+        }
+
+        // --- Particle System ---
+        let particleSystem = null;
+        function createParticles(position) {
+            if (particleSystem) scene.remove(particleSystem);
+            const particlesGeometry = new THREE.BufferGeometry();
+            const particlesCount = 200;
+            const positions = new Float32Array(particlesCount * 3);
+            for (let i = 0; i < particlesCount; i++) {
+                const x = position.x + (Math.random() - 0.5) * 4;
+                const y = position.y + (Math.random() - 0.5) * 4;
+                const z = position.z + (Math.random() - 0.5) * 4;
+                positions.set([x, y, z], i * 3);
+            }
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particlesMaterial = new THREE.PointsMaterial({
+                color: 0xFFA500,
+                size: 0.2,
+                sizeAttenuation: true
+            });
+            particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
+            scene.add(particleSystem);
+        }
+
+        // --- Kontrol Keyboard dan Sentuh ---
+        let moveLeft = false;
+        let moveRight = false;
+        const speedX = 0.25;
+
+        document.addEventListener("keydown", (e) => {
+            if (e.code === "ArrowLeft" || e.code === "KeyA") moveLeft = true;
+            if (e.code === "ArrowRight" || e.code === "KeyD") moveRight = true;
+        });
+        document.addEventListener("keyup", (e) => {
+            if (e.code === "ArrowLeft" || e.code === "KeyA") moveLeft = false;
+            if (e.code === "ArrowRight" || e.code.toLowerCase() === "keyd") moveRight = false;
+        });
+
+        document.addEventListener("touchstart", (e) => {
+            const touchX = e.touches[0].clientX;
+            if (gameOver) {
+                resetGame();
+            } else {
+                if (touchX < window.innerWidth / 2) {
+                    moveLeft = true;
+                    moveRight = false;
+                } else {
+                    moveRight = true;
+                    moveLeft = false;
+                }
+            }
+        });
+        document.addEventListener("touchend", () => {
+            moveLeft = false;
+            moveRight = false;
+        });
+
+        document.addEventListener("keydown", (e) => {
+            if (e.code === "Space" && gameOver) {
+                resetGame();
+            }
+        });
+
+        // --- Game State ---
+        let gameOver = false;
+        let level = 1;
+        let currentLevelData;
+
+        // --- UI Element ---
+        const ui = document.getElementById("ui");
+        const restartUI = document.getElementById("restartUI");
+
+        restartUI.addEventListener("click", resetGame);
+
+        // --- Fungsi Reset Game Baru ---
+        function resetGame() {
+            gameOver = false;
+            level = 1;
+            ball.position.set(0, 1, 0);
+            currentLevelData = createLevel(level);
+            updateUI();
+            restartUI.style.display = 'none';
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particleSystem = null;
+            }
+        }
+
+        // --- Game Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!gameOver) {
+                ball.position.z -= currentLevelData.speedZ;
+                if (moveLeft && ball.position.x > -9) {
+                    ball.position.x -= speedX;
+                }
+                if (moveRight && ball.position.x < 9) {
+                    ball.position.x += speedX;
+                }
+
+                for (const obstacle of obstacles) {
+                    const distance = ball.position.distanceTo(obstacle.position);
+                    if (distance < 2) {
+                        gameOver = true;
+                        createParticles(ball.position);
+                        updateUI();
+                        break;
+                    }
+                }
+
+                if (ball.position.x <= -9 || ball.position.x >= 9) {
+                    gameOver = true;
+                    createParticles(ball.position);
+                    updateUI();
+                }
+
+                if (ball.position.z < finishLine.position.z) {
+                    level++;
+                    currentLevelData = createLevel(level);
+                    ball.position.set(0, 1, 0);
+                }
+
+                updateUI();
+            }
+
+            const offset = new THREE.Vector3(0, 2, 5);
+            const cameraPosition = ball.position.clone().add(offset);
+            camera.position.lerp(cameraPosition, 0.1);
+            camera.lookAt(ball.position);
+
+            renderer.render(scene, camera);
+        }
+
+        // Inisialisasi game saat pertama kali dimuat
+        resetGame();
+        animate();
+
+        // --- Resize ---
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- Fungsi Update UI ---
+        function updateUI() {
+            if (gameOver) {
+                ui.innerHTML = `💀 Game Over!`;
+                restartUI.style.display = 'block';
+                restartUI.innerHTML = `Klik atau Sentuh Layar untuk Mulai Lagi!`;
+            } else {
+                ui.innerHTML = `Level: ${level} | Posisi Z: ${Math.floor(ball.position.z)}`;
+            }
+        }
+    </script>
+</body>
+</html>
