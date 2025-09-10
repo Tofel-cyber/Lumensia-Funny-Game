@@ -295,4 +295,5 @@ function updateUI() {
     } else {
         ui.innerHTML = `Level: ${level} | Posisi Z: ${Math.floor(ball.position.z)}`;
     }
+
 }
